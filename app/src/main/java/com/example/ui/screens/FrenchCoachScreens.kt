@@ -1353,8 +1353,21 @@ fun formatTime(sec: Int): String {
 fun RecordingReviewScreen(viewModel: FrenchCoachViewModel) {
     val topic by viewModel.activeTopic.collectAsStateWithLifecycle()
     val transcript by viewModel.recordingTextMock.collectAsStateWithLifecycle()
-    val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
-    val aiError by viewModel.aiErrorResponse.collectAsStateWithLifecycle()
+    val prepNotes by viewModel.prepNotes.collectAsStateWithLifecycle()
+    
+    // Audio player states
+    val recordedAudioPath by viewModel.recordedAudioPath.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val playDuration by viewModel.playDuration.collectAsStateWithLifecycle()
+    val playPosition by viewModel.playPosition.collectAsStateWithLifecycle()
+    
+    // Self evaluation rating states
+    val fluency by viewModel.selfFluency.collectAsStateWithLifecycle()
+    val pronunciation by viewModel.selfPronunciation.collectAsStateWithLifecycle()
+    val grammar by viewModel.selfGrammar.collectAsStateWithLifecycle()
+    val vocabulary by viewModel.selfVocabulary.collectAsStateWithLifecycle()
+    val cefr by viewModel.selfCefr.collectAsStateWithLifecycle()
+    val isSaving by viewModel.isAnalyzing.collectAsStateWithLifecycle()
 
     val currentTopic = topic
     if (currentTopic == null) return
@@ -1367,110 +1380,254 @@ fun RecordingReviewScreen(viewModel: FrenchCoachViewModel) {
                 .background(PremiumLightGrad),
             contentAlignment = Alignment.Center
         ) {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { viewModel.navigateTo(AppScreen.SPEAKING_SESSION) }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
+                // Return header
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { viewModel.navigateTo(AppScreen.SPEAKING_SESSION) }) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text("Auto-Évaluation", fontSize = 20.sp, fontWeight = FontWeight.Black, color = textDarkColor)
+                            Text("Évaluez vos compétences à l'oral", fontSize = 12.sp, color = textLightMuted)
+                        }
                     }
-                    Text("Révision & Analyse", fontSize = 18.sp, fontWeight = FontWeight.Black, color = textDarkColor)
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (isAnalyzing) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(color = PrimaryDuolingoGreen, strokeWidth = 4.dp)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Clara est en train d'écouter...",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = textDarkColor
-                        )
-                        Text(
-                            text = "Analyse de la voix, correction de grammaire, calcul du score de fluidité et estimation du niveau CECRL...",
-                            fontSize = 13.sp,
-                            color = textLightMuted,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
-                        )
-                    }
-                } else {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Card(
+                if (isSaving) {
+                    item {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(130.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, Color(0xFFEEEEEE))
+                                .height(400.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.Center) {
-                                Text("🎧 AUDIO DE PRACTICE ENREGISTRÉ", fontSize = 11.sp, color = textLightMuted, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Rounded.PlayCircle, null, tint = PrimaryDuolingoGreen, modifier = Modifier.size(48.dp))
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column {
-                                        Text("Session d'expression orale", fontWeight = FontWeight.Bold)
-                                        Text("Topic: ${currentTopic.frenchTitle}", fontSize = 12.sp, color = textLightMuted, maxLines = 1)
+                            CircularProgressIndicator(color = PrimaryDuolingoGreen, strokeWidth = 4.dp)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Enregistrement en cours...",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textDarkColor
+                            )
+                            Text(
+                                text = "Sauvegarde locale du fichier audio et des statistiques de pratique...",
+                                fontSize = 13.sp,
+                                color = textLightMuted,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                } else {
+                    // 1. High fidelity audio playback card
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("review_player_card"),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.5.dp, Color(0xFFEEEEEE))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("🎧 VOTRE PRACTICE ENREGISTRÉ (AUDIO)", fontSize = 11.sp, color = textLightMuted, fontWeight = FontWeight.Black)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Play / pause btn
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isPlaying) Color(0xFFFEE2E2) else Color(0xFFE8F5E9))
+                                            .clickable {
+                                                if (isPlaying) viewModel.pauseRecordingPlayback() else viewModel.playRecording()
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                            contentDescription = "Play/Pause",
+                                            tint = if (isPlaying) Color.Red else PrimaryDuolingoGreen,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(16.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Topic: ${currentTopic.frenchTitle}", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        
+                                        // Play progress slider bar
+                                        val totalDurationMs = if (playDuration > 0) playDuration.toFloat() else 1000f
+                                        Slider(
+                                            value = playPosition.toFloat(),
+                                            onValueChange = { viewModel.seekPlaybackTo(it) },
+                                            valueRange = 0f..totalDurationMs,
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = PrimaryDuolingoGreen,
+                                                activeTrackColor = PrimaryDuolingoGreen
+                                            ),
+                                            modifier = Modifier.height(24.dp)
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(formatTime(playPosition / 1000), fontSize = 11.sp, color = textLightMuted)
+                                            Text(formatTime(playDuration / 1000), fontSize = 11.sp, color = textLightMuted)
+                                        }
+                                    }
+
+                                    // Delete / trash button
+                                    if (recordedAudioPath != null) {
+                                        IconButton(onClick = { viewModel.deleteAudioRecording() }) {
+                                            Icon(Icons.Rounded.Delete, "Supprimer", tint = Color.Red)
+                                        }
                                     }
                                 }
                             }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                    // 2. Ratings Sliders Sheet
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("self_evaluation_card"),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.5.dp, Color(0xFFEEEEEE))
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Star, null, tint = accentOrange)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Grille d'évaluation", fontSize = 15.sp, fontWeight = FontWeight.Black, color = textDarkColor)
+                                }
+                                
+                                Spacer(modifier = Modifier.height(14.dp))
 
-                        Text("Vérifier & Ajuster la Transcription :", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        
-                        OutlinedTextField(
-                            value = transcript,
-                            onValueChange = { viewModel.updateRecordingText(it) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .testTag("review_transcript_input")
-                        )
+                                // Rating 1: Fluency
+                                Text("🗣️ Fluidité (Aisance, rythme) : $fluency/100", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = fluency.toFloat(),
+                                    onValueChange = { viewModel.setSelfFluency(it.toInt()) },
+                                    valueRange = 10f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = secondaryFrenchBlue, activeTrackColor = secondaryFrenchBlue)
+                                )
 
-                        if (aiError != null) {
-                            Text(
-                                text = "⚠️ Erreur: $aiError",
-                                color = Color.Red,
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
+                                // Rating 2: Pronunciation
+                                Text("🎨 Prononciation (Intonation) : $pronunciation/100", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = pronunciation.toFloat(),
+                                    onValueChange = { viewModel.setSelfPronunciation(it.toInt()) },
+                                    valueRange = 10f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = secondaryFrenchBlue, activeTrackColor = secondaryFrenchBlue)
+                                )
+
+                                // Rating 3: Grammar
+                                Text("📐 Grammaire (Structures de phrases) : $grammar/100", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = grammar.toFloat(),
+                                    onValueChange = { viewModel.setSelfGrammar(it.toInt()) },
+                                    valueRange = 10f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = secondaryFrenchBlue, activeTrackColor = secondaryFrenchBlue)
+                                )
+
+                                // Rating 4: Vocabulary
+                                Text("📚 Vocabulaire (Termes choisis) : $vocabulary/100", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = vocabulary.toFloat(),
+                                    onValueChange = { viewModel.setSelfVocabulary(it.toInt()) },
+                                    valueRange = 10f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = secondaryFrenchBlue, activeTrackColor = secondaryFrenchBlue)
+                                )
+                            }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                    // 3. CEFR Level Selector
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.5.dp, Color(0xFFEEEEEE))
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp)) {
+                                Text("🌍 Quel niveau CECRL estimez-vous avoir atteint ?", fontSize = 13.sp, fontWeight = FontWeight.Black)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val cefrLevels = listOf("A1", "A2", "B1", "B2", "C1", "C2")
+                                    cefrLevels.forEach { level ->
+                                        val isSelected = cefr == level
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 44.dp, height = 36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSelected) PrimaryDuolingoGreen else Color(0xFFF1F5F9))
+                                                .clickable { viewModel.setSelfCefr(level) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = level,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = if (isSelected) Color.White else textDarkColor
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                        // Trigger analysis action
+                    // 4. Draft notes input for post reflection saving
+                    item {
+                        Text("Brouillon enregistré :", fontSize = 12.sp, color = textLightMuted, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = prepNotes,
+                            onValueChange = {},
+                            readOnly = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                        )
+                    }
+
+                    // 5. Huge CTA button
+                    item {
                         Button(
-                            onClick = { viewModel.triggerAISpeakingCoachingAnalysis() },
+                            onClick = { viewModel.saveSelfEvaluationSession() },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryDuolingoGreen),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp)
-                                .testTag("envoyer_analyse_btn"),
-                            shape = RoundedCornerShape(16.dp)
+                                .height(56.dp)
+                                .testTag("save_evaluation_btn"),
+                            shape = RoundedCornerShape(24.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.AutoAwesome, null)
+                                Icon(Icons.Rounded.CheckCircle, null, tint = Color.White)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Lancer le Coaching IA Clara ⚡", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("Enregistrer ma Session (+Points 🏆)", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -1480,43 +1637,16 @@ fun RecordingReviewScreen(viewModel: FrenchCoachViewModel) {
     }
 }
 
-// --- SCREEN 6: AI FEEDBACK REPORT SCREEN ---
-@OptIn(ExperimentalLayoutApi::class)
+// --- SCREEN 6: AI FEEDBACK REPORT SCREEN (REPURPOSED TO OFFLINE SUMMARY VIEW) ---
 @Composable
 fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
     val activeReview by viewModel.activeReviewSession.collectAsStateWithLifecycle()
     if (activeReview == null) return
 
-    val moshi = GeminiClient.jsonParser
-    
-    // Parse json details safely or use defaults
-    val correctionsList: List<GrammarCorrectionItem> = try {
-        moshi.adapter(Array<GrammarCorrectionItem>::class.java)
-            .fromJson(activeReview!!.grammarCorrectionJson)?.toList() ?: emptyList()
-    } catch (e: Exception) {
-        emptyList()
-    }
-
-    val vocabSuggestions: List<VocabularySuggestionItem> = try {
-        moshi.adapter(Array<VocabularySuggestionItem>::class.java)
-            .fromJson(activeReview!!.vocabSuggestionsJson)?.toList() ?: emptyList()
-    } catch (e: Exception) {
-        emptyList()
-    }
-
-    val pronunciationFeedback: List<PronunciationFeedbackItem> = try {
-        moshi.adapter(Array<PronunciationFeedbackItem>::class.java)
-            .fromJson(activeReview!!.pronunciationFeedbackJson)?.toList() ?: emptyList()
-    } catch (e: Exception) {
-        emptyList()
-    }
-
-    val tipsList: List<String> = try {
-        moshi.adapter(Array<String>::class.java)
-            .fromJson(activeReview!!.improvementTipsJson)?.toList() ?: emptyList()
-    } catch (e: Exception) {
-        emptyList()
-    }
+    // Audio player states
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val playDuration by viewModel.playDuration.collectAsStateWithLifecycle()
+    val playPosition by viewModel.playPosition.collectAsStateWithLifecycle()
 
     Scaffold(
         bottomBar = { BottomNavBar(activeScreen = AppScreen.HOME_DASHBOARD, onNavigate = { viewModel.navigateTo(it) }) }
@@ -1529,14 +1659,20 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header
+            // Header back
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Rapport Coaching IA Clara", fontSize = 20.sp, fontWeight = FontWeight.Black, color = textDarkColor)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { viewModel.navigateTo(AppScreen.PROGRESS_ANALYTICS) }) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Fiche de Pratique", fontSize = 20.sp, fontWeight = FontWeight.Black, color = textDarkColor)
+                    }
                     Box(
                         modifier = Modifier
                             .size(36.dp)
@@ -1558,12 +1694,12 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
                     border = BorderStroke(1.5.dp, Color(0xFFEEEEEE))
                 ) {
                     Row(
-                        modifier = Modifier.padding(20.dp),
+                        modifier = Modifier.padding(18.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text("SCORE DE FLUIDITÉ", fontSize = 11.sp, fontWeight = FontWeight.Black, color = textLightMuted)
+                            Text("Auto-Évaluation Globale", fontSize = 11.sp, fontWeight = FontWeight.Black, color = textLightMuted)
                             Spacer(modifier = Modifier.height(4.dp))
                             
                             Row(verticalAlignment = Alignment.Bottom) {
@@ -1579,9 +1715,9 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
                             // Achievement state message
                             Text(
                                 text = when {
-                                    activeReview!!.fluencyScore >= 85 -> "Excellent rythme ! 🇫🇷"
-                                    activeReview!!.fluencyScore >= 70 -> "Bon travail ! Très compréhensible."
-                                    else -> "À pratiquer pour gagner en aisance."
+                                    activeReview!!.fluencyScore >= 85 -> "Excellent niveau ! 🇫🇷"
+                                    activeReview!!.fluencyScore >= 70 -> "Bonne performance d'expression."
+                                    else -> "À pratiquer régulièrement."
                                 },
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
@@ -1592,7 +1728,7 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
                         // Large CEFR Badge
                         Box(
                             modifier = Modifier
-                                .size(90.dp)
+                                .size(84.dp)
                                 .background(
                                     Brush.linearGradient(colors = listOf(secondaryFrenchBlue, Color(0xFF0077D6))),
                                     CircleShape
@@ -1601,14 +1737,14 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("NIVEAU", fontSize = 10.sp, color = Color.White.copy(alpha = 0.8f))
-                                Text(activeReview!!.cefrLevel, fontSize = 28.sp, fontWeight = FontWeight.Black, color = Color.White)
+                                Text(activeReview!!.cefrLevel, fontSize = 26.sp, fontWeight = FontWeight.Black, color = Color.White)
                             }
                         }
                     }
                 }
             }
 
-            // Reward Notification
+            // Reward Notification banner
             item {
                 Box(
                     modifier = Modifier
@@ -1621,14 +1757,61 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
                         Text("🎉", fontSize = 22.sp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("XP Gagnés +35 XP !", fontWeight = FontWeight.Bold, color = Color(0xFF117F64))
+                            Text("Session d'expression validée", fontWeight = FontWeight.Bold, color = Color(0xFF117F64))
                             Text("Votre série active quotidienne se poursuit !", fontSize = 12.sp, color = textLightMuted)
                         }
                     }
                 }
             }
 
-            // Text transcription correction diff view
+            // Real audio player inside history to replay!
+            if (activeReview!!.audioPath != null) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFFEEEEEE))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("🎧 RÉÉCOUTER VOTRE ENREGISTREMENT", fontSize = 11.sp, color = textLightMuted, fontWeight = FontWeight.Black)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isPlaying) Color(0xFFFEE2E2) else Color(0xFFE8F5E9))
+                                        .clickable {
+                                            if (isPlaying) viewModel.pauseRecordingPlayback() else viewModel.playRecording()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                        contentDescription = "Replay",
+                                        tint = if (isPlaying) Color.Red else PrimaryDuolingoGreen
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("Fichier Enregistré", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    val totalDurationMs = if (playDuration > 0) playDuration.toFloat() else 1000f
+                                    Slider(
+                                        value = playPosition.toFloat(),
+                                        onValueChange = { viewModel.seekPlaybackTo(it) },
+                                        valueRange = 0f..totalDurationMs,
+                                        colors = SliderDefaults.colors(thumbColor = PrimaryDuolingoGreen, activeTrackColor = PrimaryDuolingoGreen),
+                                        modifier = Modifier.height(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Transcription display card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -1640,7 +1823,7 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Chat, null, tint = secondaryFrenchBlue)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Transcription Polie", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Transcription enregistrée", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                         
                         Spacer(modifier = Modifier.height(10.dp))
@@ -1648,175 +1831,38 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
                         Text(
                             text = activeReview!!.transcript,
                             fontSize = 14.sp,
-                            color = textLightMuted,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider()
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        Text("Transcription Corrigée par Clara :", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryDuolingoGreen)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = activeReview!!.correctedTranscript,
-                            fontSize = 14.sp,
                             color = textDarkColor,
-                            fontWeight = FontWeight.Medium,
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
             }
 
-            // Grammar Correction Highlight
-            item {
-                Text("🔴 GRAMMAIRE & STRUCTURES :", fontWeight = FontWeight.Black, fontSize = 13.sp, color = textLightMuted)
-            }
-
-            if (correctionsList.isEmpty()) {
+            // Prepared notes display card
+            if (activeReview!!.userNotes.isNotBlank()) {
                 item {
-                    Text("Aucune erreur de grammaire détectée ! Superbe !", fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
-                }
-            } else {
-                items(correctionsList) { correction ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, Color(0xFFEEEEEE))
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, Color(0xFFF0F0F0))
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            // original (danger red color light)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFFFFEBEE))
-                                    .padding(8.dp)
-                            ) {
-                                Text("Suggéré: " + correction.original, color = Color(0xFFC62828), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.EditNote, null, tint = accentOrange)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                textDarkColor
+                                Text("Notes de Préparation", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             }
                             
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // corrected (success green light)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFFE8F5E9))
-                                    .padding(8.dp)
-                            ) {
-                                Text("Correction: " + correction.corrected, color = Color(0xFF2E7D32), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
                             Text(
-                                text = correction.explanation,
-                                fontSize = 12.sp,
+                                text = activeReview!!.userNotes,
+                                fontSize = 13.sp,
                                 color = textLightMuted,
-                                fontFamily = FontFamily.SansSerif
+                                style = MaterialTheme.typography.bodyMedium
                             )
-                        }
-                    }
-                }
-            }
-
-            // Vocabulary Suggestions Upgrade Dictionary
-            item {
-                Text("🎨 VOS SUGGESTIONS VOCABULAIRE :", fontWeight = FontWeight.Black, fontSize = 13.sp, color = textLightMuted)
-            }
-
-            items(vocabSuggestions) { vocab ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5)),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(Color.White, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("💡", fontSize = 16.sp)
-                        }
-                        
-                        Spacer(modifier = Modifier.width(12.dp))
-                        
-                        Column {
-                            Text(
-                                text = buildAnnotatedString {
-                                    append("Remplacez ")
-                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.Red)) { append(vocab.originalWord) }
-                                    append(" par ")
-                                    withStyle(SpanStyle(fontWeight = FontWeight.Black, color = Color(0xFF6A1B9A))) { append(vocab.suggestedAlternative) }
-                                },
-                                fontSize = 13.sp
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Exemple : \"${vocab.usageExample}\"",
-                                fontSize = 12.sp,
-                                color = textLightMuted,
-                                fontFamily = FontFamily.SansSerif
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Pronunciation feedback cards
-            item {
-                Text("🗣️ CONSEILS PRONONCIATION :", fontWeight = FontWeight.Black, fontSize = 13.sp, color = textLightMuted)
-            }
-
-            items(pronunciationFeedback) { audioTip ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White)
-                        .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(12.dp))
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.VolumeUp, null, tint = accentOrange, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(audioTip.word, fontWeight = FontWeight.Bold, color = textDarkColor, fontSize = 14.sp)
-                        Text(audioTip.tip, fontSize = 12.sp, color = textLightMuted)
-                    }
-                }
-            }
-
-            // Improvement Tips list
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFBC02D))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.TipsAndUpdates, null, tint = Color(0xFFFBC02D))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Prochains Objectifs d'amélioration", fontWeight = FontWeight.Bold, color = Color(0xFFF57F17), fontSize = 14.sp)
-                        }
-                        
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        tipsList.forEachIndexed { idx, tip ->
-                            Row(modifier = Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
-                                Text("${idx + 1}.", fontWeight = FontWeight.Bold, color = Color(0xFFF57F17), modifier = Modifier.padding(end = 6.dp))
-                                Text(tip, fontSize = 13.sp, color = textDarkColor)
-                            }
                         }
                     }
                 }
@@ -1825,14 +1871,14 @@ fun AiFeedbackReportScreen(viewModel: FrenchCoachViewModel) {
             // CTA footer
             item {
                 Button(
-                    onClick = { viewModel.navigateTo(AppScreen.HOME_DASHBOARD) },
+                    onClick = { viewModel.navigateTo(AppScreen.PROGRESS_ANALYTICS) },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryDuolingoGreen),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("Retourner au Tableau de Bord", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Retourner à l'Historique", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             }
         }
@@ -2436,7 +2482,7 @@ fun SettingsScreen(viewModel: FrenchCoachViewModel) {
                     
                     Column {
                         Text(username, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text(userEmail ?: "Offline local sync", fontSize = 12.sp, color = textLightMuted)
+                        Text(userEmail ?: "Mode Invité - Session Locale Gratuite", fontSize = 12.sp, color = textLightMuted)
                     }
                 }
             }
@@ -2551,17 +2597,31 @@ fun SettingsScreen(viewModel: FrenchCoachViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Logout row button
-            Button(
-                onClick = { viewModel.logout() },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFEBEE)),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag("logout_btn")
-            ) {
-                Text("Se déconnecter", color = Color(0xFFC62828), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            // Logout or optional authentication row button
+            if (userEmail != null) {
+                Button(
+                    onClick = { viewModel.logout() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFEBEE)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("logout_btn")
+                ) {
+                    Text("Se déconnecter", color = Color(0xFFC62828), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            } else {
+                Button(
+                    onClick = { viewModel.navigateTo(AppScreen.AUTHENTICATION) },
+                    colors = ButtonDefaults.buttonColors(containerColor = secondaryFrenchBlue),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("login_redirect_btn")
+                ) {
+                    Text("S'enregistrer ou Se Connecter", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

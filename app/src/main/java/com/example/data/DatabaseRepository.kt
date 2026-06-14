@@ -68,7 +68,7 @@ class DatabaseRepository(private val coachDao: CoachDao) {
         coachDao.insertOrUpdateProgress(progress)
     }
 
-    // Comprehensive record update after completing a speaking session
+    // Comprehensive record update after completing a speaking session (fully local and offline)
     suspend fun completeSpeakingSession(
         topicId: Int,
         topicTitle: String,
@@ -76,22 +76,11 @@ class DatabaseRepository(private val coachDao: CoachDao) {
         prepSec: Int,
         speakSec: Int,
         transcript: String,
-        feedback: CoachFeedbackResponse,
-        userNotes: String
+        fluencyScore: Int,
+        cefrLevel: String,
+        userNotes: String,
+        audioPath: String?
     ): SessionHistory {
-        // Save the session history trace
-        val moshi = GeminiClient.jsonParser
-        
-        val grammarAdapter = moshi.adapter(List::class.java) // Simple raw mapping or specific
-        val grammarString = moshi.adapter(Array<GrammarCorrectionItem>::class.java)
-            .toJson(feedback.grammarCorrections.toTypedArray())
-        val vocabString = moshi.adapter(Array<VocabularySuggestionItem>::class.java)
-            .toJson(feedback.vocabularySuggestions.toTypedArray())
-        val pronunciationString = moshi.adapter(Array<PronunciationFeedbackItem>::class.java)
-            .toJson(feedback.pronunciationFeedback.toTypedArray())
-        val tipsString = moshi.adapter(Array<String>::class.java)
-            .toJson(feedback.improvementTips.toTypedArray())
-
         val historyEntity = SessionHistory(
             topicId = topicId,
             topicTitle = topicTitle,
@@ -100,14 +89,14 @@ class DatabaseRepository(private val coachDao: CoachDao) {
             prepDurationSec = prepSec,
             speakDurationSec = speakSec,
             transcript = transcript,
-            fluencyScore = feedback.fluencyScore,
-            cefrLevel = feedback.cefrLevel,
-            grammarCorrectionJson = grammarString,
-            vocabSuggestionsJson = vocabString,
-            pronunciationFeedbackJson = pronunciationString,
-            improvementTipsJson = tipsString,
-            correctedTranscript = feedback.correctedTranscript,
-            audioPath = null, // Path to local recorded file if recorded
+            fluencyScore = fluencyScore,
+            cefrLevel = cefrLevel,
+            grammarCorrectionJson = "[]",
+            vocabSuggestionsJson = "[]",
+            pronunciationFeedbackJson = "[]",
+            improvementTipsJson = "[]",
+            correctedTranscript = transcript,
+            audioPath = audioPath,
             userNotes = userNotes
         )
 
@@ -115,9 +104,9 @@ class DatabaseRepository(private val coachDao: CoachDao) {
         val insertedSession = historyEntity.copy(id = id.toInt())
 
         // Calculate and award user XP and update stats
-        val baseXP = 15
-        val durationBonus = (speakSec / 10) // +1 XP per 10 seconds of speaking
-        val qualityBonus = (feedback.fluencyScore / 5) // up to +20 XP for fluency
+        val baseXP = 20
+        val durationBonus = (speakSec / 10).coerceAtMost(30) // +1 XP per 10 seconds of speaking, up to 30 bonus XP
+        val qualityBonus = (fluencyScore / 5) // up to 20 XP
         val xpEarnt = baseXP + durationBonus + qualityBonus
 
         // Increment stats
@@ -133,19 +122,19 @@ class DatabaseRepository(private val coachDao: CoachDao) {
         val newStreak = when {
             lastPracticed == 0L -> 1
             else -> {
-                val calNow = Calendar.getInstance().apply { timeInMillis = now }
-                val calLast = Calendar.getInstance().apply { timeInMillis = lastPracticed }
+                val calNow = java.util.Calendar.getInstance().apply { timeInMillis = now }
+                val calLast = java.util.Calendar.getInstance().apply { timeInMillis = lastPracticed }
                 
                 // Truncate hours/minutes for clear date difference
-                calNow.set(Calendar.HOUR_OF_DAY, 0)
-                calNow.set(Calendar.MINUTE, 0)
-                calNow.set(Calendar.SECOND, 0)
-                calNow.set(Calendar.MILLISECOND, 0)
+                calNow.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                calNow.set(java.util.Calendar.MINUTE, 0)
+                calNow.set(java.util.Calendar.SECOND, 0)
+                calNow.set(java.util.Calendar.MILLISECOND, 0)
 
-                calLast.set(Calendar.HOUR_OF_DAY, 0)
-                calLast.set(Calendar.MINUTE, 0)
-                calLast.set(Calendar.SECOND, 0)
-                calLast.set(Calendar.MILLISECOND, 0)
+                calLast.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                calLast.set(java.util.Calendar.MINUTE, 0)
+                calLast.set(java.util.Calendar.SECOND, 0)
+                calLast.set(java.util.Calendar.MILLISECOND, 0)
 
                 val diffMs = calNow.timeInMillis - calLast.timeInMillis
                 val diffDays = diffMs / (1000 * 60 * 60 * 24)
@@ -158,28 +147,21 @@ class DatabaseRepository(private val coachDao: CoachDao) {
             }
         }
 
+        // Longest streak tracking
+        val maxStreak = maxOf(currentProgress.streak, newStreak)
+        val newLongestStreak = if (currentProgress.longestStreak < maxStreak) maxStreak else currentProgress.longestStreak
+
         val updatedProgress = currentProgress.copy(
             level = newLevel,
             xp = newXP,
             streak = newStreak,
+            longestStreak = newLongestStreak,
             lastPracticeTimestamp = now,
             totalPracticeSeconds = currentProgress.totalPracticeSeconds + speakSec,
             completedTopicsCount = currentProgress.completedTopicsCount + 1
         )
 
         coachDao.insertOrUpdateProgress(updatedProgress)
-
-        // Automatically convert vocabulary suggestions to learnable flashcards
-        feedback.vocabularySuggestions.forEach { suggestion ->
-            val vocabCard = VocabularyCard(
-                word = suggestion.suggestedAlternative,
-                translation = suggestion.originalWord, // basic helper
-                frenchContext = suggestion.usageExample,
-                creationTime = System.currentTimeMillis(),
-                isLearned = false
-            )
-            coachDao.insertVocabulary(vocabCard)
-        }
 
         return insertedSession
     }

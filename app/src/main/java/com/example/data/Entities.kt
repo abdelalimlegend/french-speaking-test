@@ -42,6 +42,7 @@ data class UserProgress(
     val level: Int = 1,
     val xp: Int = 0,
     val streak: Int = 0,
+    val longestStreak: Int = 0,
     val lastPracticeTimestamp: Long = 0,
     val totalPracticeSeconds: Int = 0,
     val completedTopicsCount: Int = 0,
